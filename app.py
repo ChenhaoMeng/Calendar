@@ -129,24 +129,32 @@ with tab1:
                         st.error("AI 解析失败，请重试")
 
     with col2:
-        # --- 核心：渲染日历组件 ---
+
         events_data, _ = calendar_db.load()
         
         # 1. 数据转换：把 GitHub 的数据格式转为 Calendar 组件需要的格式
         calendar_events = []
         for e in events_data:
-            # 构造 ISO 格式的时间字符串
+            # 【修复】防御性判断：如果数据不是字典（是字符串或None），直接跳过
+            if not isinstance(e, dict):
+                continue
+                
+            # 获取日期，如果没有日期也跳过
             start_str = e.get('date')
+            if not start_str:
+                continue
+                
+            # 拼接时间
             if e.get('time'):
                 start_str += f"T{e.get('time')}"
             
             # 定义事件颜色 (随机或固定)
             calendar_events.append({
-                "title": f"{e.get('time', '')} {e.get('title')}",
+                "title": f"{e.get('time', '')} {e.get('title', '无标题')}",
                 "start": start_str,
-                "backgroundColor": "#3788d8", # 蓝色背景
+                "backgroundColor": "#3788d8",
                 "borderColor": "#3788d8",
-                "extendedProps": {"location": e.get('location')} # 额外信息
+                "extendedProps": {"location": e.get('location', '')}
             })
 
         # 2. 配置日历外观
