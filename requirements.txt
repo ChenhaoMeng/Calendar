@@ -3,3 +3,4 @@ PyGithub
 openai
 pandas
 plotly
+streamlit-calendar
