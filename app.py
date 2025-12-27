@@ -149,14 +149,23 @@ def ai_parse_finance(text):
     except: return None
 
 def ai_parse_calendar(text):
-    current = datetime.now().strftime("%Y-%m-%d %H:%M %A")
+    current_year = datetime.now().year
     prompt = f"""
-    当前时间: {current} (2025年)。
-    分析: "{text}"。提取日程JSON:
-    - title: 标题
-    - start: YYYY-MM-DD (如果是具体时间点，格式为 YYYY-MM-DDTHH:MM:SS)
-    - allDay: true/false (如果有具体几点则为false)
-    - location: 地点 (可选)
+    当前系统年份: {current_year}。
+    请分析输入文本，它可能包含**多条**日程或考试安排。
+    
+    输入文本: "{text}"
+    
+    请提取所有事件并返回一个 JSON 列表 (Array)。即使只有一条，也必须包在列表里。
+    每个事件包含:
+    - title: 标题 (通常是课程名或事项名)
+    - start: 格式必须为 "YYYY-MM-DDTHH:MM:SS" (24小时制)。
+      例如输入 "2026-01-16(13:10-15:10)" 应解析为 "2026-01-16T13:10:00"。
+    - end: 结束时间 (根据时间段推算)，格式同上。
+    - location: 地点 (如 "东下院102")
+    - allDay: false (如果有具体时间点)
+    
+    注意：优先使用文本中明确提到的年份(如2026)，不要强行改为当前年份。
     """
     try:
         response = client.chat.completions.create(
@@ -164,11 +173,16 @@ def ai_parse_calendar(text):
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
-        data = json.loads(clean_json_string(response.choices[0].message.content))
-        if isinstance(data, list): return data[0]
-        return data
-    except: return None
-
+        # 解析返回的 JSON
+        result = json.loads(clean_json_string(response.choices[0].message.content))
+        
+        # 容错处理：确保返回的一定是列表
+        if isinstance(result, dict):
+            return [result]
+        return result
+    except Exception as e:
+        print(f"解析错误: {e}") 
+        return []
 # --- 4. 侧边栏 ---
 with st.sidebar:
     st.title("🤖 助手控制台")
@@ -199,16 +213,20 @@ with tab1:
             submitted = st.form_submit_button("添加日程", use_container_width=True, type="primary")
             
         if submitted and cal_txt:
-            with st.spinner("🤖 AI 正在规划时间..."):
-                event = ai_parse_calendar(cal_txt)
-                if event:
+            with st.spinner("🤖 AI 正在批量解析日程..."):
+                new_events = ai_parse_calendar(cal_txt)
+                
+                if new_events and isinstance(new_events, list) and len(new_events) > 0:
                     data, sha = calendar_db.load()
-                    data.append(event)
+                    
+                    # 使用 extend 批量添加
+                    data.extend(new_events)
+                    
                     if calendar_db.save(data, sha):
-                        st.toast("✅ 日程已添加", icon="📅")
+                        st.toast(f"✅ 成功导入 {len(new_events)} 条日程！", icon="📅")
                         st.rerun()
                 else:
-                    st.error("AI 无法理解该指令")
+                    st.error("无法识别日程，请检查输入格式")
 
         # 待办列表视图
         st.markdown("---")
