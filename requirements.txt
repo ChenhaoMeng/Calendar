@@ -1,0 +1,5 @@
+streamlit
+PyGithub
+openai
+pandas
+plotly
