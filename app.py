@@ -2,53 +2,38 @@ import streamlit as st
 import json
 import pandas as pd
 from github import Github
-from openai import OpenAI  # DeepSeek 兼容 OpenAI 的库，所以这里不用变
-from datetime import datetime
+from openai import OpenAI
+from datetime import datetime, timedelta
 import plotly.express as px
 import re
-import streamlit as st
+from streamlit_calendar import calendar  # 引入日历组件
 
-st.write("正在检查 Secrets 配置...") # 打印一条消息证明代码在跑
+# --- 1. 配置与初始化 ---
+st.set_page_config(page_title="DeepSeek AI 助理", page_icon="🦈", layout="wide")
 
-if "GITHUB_TOKEN" not in st.secrets:
-    st.error("❌ 缺少 GITHUB_TOKEN")
-else:
-    st.success("✅ GITHUB_TOKEN 已检测到")
+# 简洁的 Secrets 获取逻辑 (不再打印调试信息)
+try:
+    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+    REPO_NAME = st.secrets["REPO_NAME"]
+    DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
+except:
+    st.error("❌ 配置丢失，请检查 Secrets")
+    st.stop()
 
-if "REPO_NAME" not in st.secrets:
-    st.error("❌ 缺少 REPO_NAME")
-else:
-    st.success("✅ REPO_NAME 已检测到")
-
-if "DEEPSEEK_API_KEY" not in st.secrets:
-    st.error("❌ 缺少 DEEPSEEK_API_KEY (你是不是用了 OPENAI_API_KEY?)")
-else:
-    st.success("✅ DEEPSEEK_API_KEY 已检测到")
-
-# 尝试直接赋值，如果有错让它直接爆红，方便看 Traceback
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-REPO_NAME = st.secrets["REPO_NAME"]
-DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-
-# 关键修改：初始化 DeepSeek 客户端
+# 初始化 DeepSeek
 client = OpenAI(
     api_key=DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com"  # 指向 DeepSeek 的服务器
+    base_url="https://api.deepseek.com"
 )
 
-# --- 工具函数：清洗 JSON ---
+# --- 工具函数 ---
 def clean_json_string(s):
-    """
-    DeepSeek 有时会返回 ```json ... ``` 格式，需要清洗掉 Markdown 标记
-    才能被 json.loads 解析。
-    """
     if not s: return ""
-    # 去掉 ```json 和 ``` 
     s = re.sub(r"```json\s*", "", s)
     s = re.sub(r"```", "", s)
     return s.strip()
 
-# --- 2. 通用 GitHub 数据管理器 (保持不变) ---
+# --- 2. GitHub 数据管理器 ---
 class DataManager:
     def __init__(self, filename):
         self.filename = filename
@@ -77,76 +62,62 @@ class DataManager:
             st.error(f"保存失败: {e}")
             return False
 
+# 初始化
 calendar_db = DataManager("events.json")
 notes_db = DataManager("notes.json")
 finance_db = DataManager("finance.json")
 
-# --- 3. AI 智能处理函数 (针对 DeepSeek 优化) ---
-
+# --- 3. AI 智能处理 ---
 def ai_parse_finance(text):
     prompt = f"""
-    分析文本: "{text}"
-    提取记账信息，只返回纯 JSON 字符串，不要Markdown格式:
-    - item: 消费内容
-    - amount: 金额 (数字，支出为负，收入为正)
-    - category: 类别 (如: 餐饮, 交通, 购物, 工资)
-    - date: YYYY-MM-DD (默认今天 {datetime.now().strftime('%Y-%m-%d')})
+    分析: "{text}"。提取记账JSON(不要Markdown):
+    - item: 内容
+    - amount: 金额(数字,支出为负)
+    - category: 类别
+    - date: YYYY-MM-DD (默认{datetime.now().strftime('%Y-%m-%d')})
     """
     try:
         response = client.chat.completions.create(
-            model="deepseek-chat",  # 使用 DeepSeek V3
-            messages=[
-                {"role": "system", "content": "你是一个严谨的数据助理，只输出 JSON。"},
-                {"role": "user", "content": prompt}
-            ],
+            model="deepseek-chat",
+            messages=[{"role": "system", "content": "只输出JSON"}, {"role": "user", "content": prompt}],
             temperature=0.1
         )
-        content = clean_json_string(response.choices[0].message.content)
-        return json.loads(content)
-    except Exception as e:
-        st.error(f"解析出错: {e}")
-        return None
+        return json.loads(clean_json_string(response.choices[0].message.content))
+    except: return None
 
 def ai_parse_calendar(text):
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M %A")
+    current = datetime.now().strftime("%Y-%m-%d %H:%M %A")
     prompt = f"""
-    当前时间: {current_time}。
-    分析文本: "{text}"，提取日历事件，只返回纯 JSON 字符串:
+    当前: {current}。分析: "{text}"。提取日程JSON(不要Markdown):
     - title: 标题
     - date: YYYY-MM-DD
-    - time: HH:MM
+    - time: HH:MM (若未提及则为空字符串)
     - location: 地点
     """
     try:
         response = client.chat.completions.create(
-            model="deepseek-chat", # 使用 DeepSeek V3
-            messages=[
-                {"role": "system", "content": "你是一个严谨的日历助理，只输出 JSON。"},
-                {"role": "user", "content": prompt}
-            ],
+            model="deepseek-chat",
+            messages=[{"role": "system", "content": "只输出JSON"}, {"role": "user", "content": prompt}],
             temperature=0.1
         )
-        content = clean_json_string(response.choices[0].message.content)
-        return json.loads(content)
-    except Exception as e:
-        st.error(f"解析出错: {e}")
-        return None
+        return json.loads(clean_json_string(response.choices[0].message.content))
+    except: return None
 
-# --- 4. 界面构建 (保持不变) ---
-
+# --- 4. 界面构建 ---
 st.title("🦈 DeepSeek 智能助理")
 
-tab1, tab2, tab3 = st.tabs(["📅 日程管理", "💰 极速记账", "📝 灵感备忘"])
+tab1, tab2, tab3 = st.tabs(["📅 日程日历", "💰 极速记账", "📝 灵感备忘"])
 
-# ================= Tab 1: 日历 =================
+# ================= Tab 1: 可视化日历 (大幅升级) =================
 with tab1:
-    col1, col2 = st.columns([1, 2])
+    col1, col2 = st.columns([1, 3]) # 左侧输入，右侧大日历
+    
     with col1:
-        st.subheader("新增日程")
-        cal_input = st.text_area("输入计划...", height=100, key="cal_in")
-        if st.button("添加日程", key="btn_cal"):
+        st.subheader("➕ 添加")
+        cal_input = st.text_area("输入计划 (如: 周五晚8点去看电影)", height=150)
+        if st.button("智能添加", use_container_width=True, type="primary"):
             if cal_input:
-                with st.spinner("DeepSeek 正在思考..."):
+                with st.spinner("AI 正在安排..."):
                     event = ai_parse_calendar(cal_input)
                     if event:
                         data, sha = calendar_db.load()
@@ -154,66 +125,94 @@ with tab1:
                         if calendar_db.save(data, sha, "Add event"):
                             st.success("✅ 添加成功")
                             st.rerun()
-    with col2:
-        st.subheader("日程列表")
-        events, _ = calendar_db.load()
-        if events:
-            df_cal = pd.DataFrame(events)
-            st.dataframe(df_cal, column_config={"title": "事件", "date": "日期", "time": "时间", "location": "地点"}, hide_index=True, use_container_width=True)
-        else:
-            st.info("暂无日程")
+                    else:
+                        st.error("AI 解析失败，请重试")
 
-# ================= Tab 2: 记账 =================
+    with col2:
+        # --- 核心：渲染日历组件 ---
+        events_data, _ = calendar_db.load()
+        
+        # 1. 数据转换：把 GitHub 的数据格式转为 Calendar 组件需要的格式
+        calendar_events = []
+        for e in events_data:
+            # 构造 ISO 格式的时间字符串
+            start_str = e.get('date')
+            if e.get('time'):
+                start_str += f"T{e.get('time')}"
+            
+            # 定义事件颜色 (随机或固定)
+            calendar_events.append({
+                "title": f"{e.get('time', '')} {e.get('title')}",
+                "start": start_str,
+                "backgroundColor": "#3788d8", # 蓝色背景
+                "borderColor": "#3788d8",
+                "extendedProps": {"location": e.get('location')} # 额外信息
+            })
+
+        # 2. 配置日历外观
+        calendar_options = {
+            "headerToolbar": {
+                "left": "today prev,next",
+                "center": "title",
+                "right": "dayGridMonth,timeGridWeek,timeGridDay"
+            },
+            "initialView": "dayGridMonth",
+            "navLinks": True,
+            "selectable": True,
+            "nowIndicator": True,
+        }
+
+        # 3. 显示日历
+        if calendar_events:
+            st.markdown("### 🗓️ 我的日程表")
+            calendar(events=calendar_events, options=calendar_options, key="my_calendar")
+        else:
+            st.info("👋 日历是空的，快在左边添加第一条日程吧！")
+
+# ================= Tab 2: 记账 (保持原有逻辑) =================
 with tab2:
     f_col1, f_col2 = st.columns([2, 1])
     with f_col1:
-        fin_input = st.text_input("输入消费 (如: 超市买菜60元):", key="fin_in")
+        fin_input = st.text_input("输入消费:", placeholder="例如: 超市买菜60元")
     with f_col2:
-        if st.button("记一笔", key="btn_fin", type="primary"):
+        if st.button("记账", type="primary"):
             if fin_input:
-                with st.spinner("DeepSeek 正在计算..."):
-                    record = ai_parse_finance(fin_input)
-                    if record:
-                        data, sha = finance_db.load()
-                        data.append(record)
-                        if finance_db.save(data, sha, "Add finance"):
-                            st.success(f"✅ 已记录: {record['item']}")
-                            st.rerun()
+                record = ai_parse_finance(fin_input)
+                if record:
+                    data, sha = finance_db.load()
+                    data.append(record)
+                    finance_db.save(data, sha)
+                    st.rerun()
 
     fin_data, _ = finance_db.load()
     if fin_data:
         df_fin = pd.DataFrame(fin_data)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("当前结余", f"¥{df_fin['amount'].sum():.2f}")
-        m2.metric("总支出", f"¥{abs(df_fin[df_fin['amount'] < 0]['amount'].sum()):.2f}")
-        m3.metric("笔数", len(df_fin))
+        st.metric("本月结余", f"¥{df_fin['amount'].sum():.2f}")
         
-        st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("支出构成")
             df_exp = df_fin[df_fin['amount'] < 0].copy()
             if not df_exp.empty:
                 df_exp['abs'] = df_exp['amount'].abs()
                 st.plotly_chart(px.pie(df_exp, values='abs', names='category', hole=0.4), use_container_width=True)
         with c2:
-            st.dataframe(df_fin[['date', 'item', 'amount', 'category']].sort_values('date', ascending=False), hide_index=True)
+            st.dataframe(df_fin[['date', 'item', 'amount', 'category']].sort_values('date', ascending=False), hide_index=True, use_container_width=True)
 
-# ================= Tab 3: 备忘 =================
+# ================= Tab 3: 备忘 (保持原有逻辑) =================
 with tab3:
-    st.subheader("随手记")
     with st.form("note"):
-        content = st.text_area("内容")
-        tags = st.text_input("标签")
+        c1, c2 = st.columns([3, 1])
+        content = c1.text_input("内容")
+        tags = c2.text_input("标签")
         if st.form_submit_button("保存"):
             if content:
                 new_note = {"content": content, "tags": tags.split(), "created_at": datetime.now().strftime("%Y-%m-%d")}
                 data, sha = notes_db.load()
                 data.insert(0, new_note)
-                if notes_db.save(data, sha, "Add note"):
-                    st.rerun()
+                notes_db.save(data, sha)
+                st.rerun()
     
-    st.divider()
     notes, _ = notes_db.load()
     for n in notes:
-        st.info(f"📅 {n['created_at']} | {n['content']} \n\n {' '.join(['#'+t for t in n.get('tags',[])])}")
+        st.markdown(f"**{n['created_at']}**: {n['content']} `{' '.join(n.get('tags',[]))}`")
+        st.divider()
