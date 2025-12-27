@@ -31,12 +31,10 @@ def clean_json_string(s):
     s = re.sub(r"```", "", s)
     return s.strip()
 
-# --- 2. GitHub 数据管理器 (已修复警告) ---
 class DataManager:
     def __init__(self, filename):
         self.filename = filename
         try:
-            # 【修复】使用 Auth.Token 消除 DeprecationWarning
             auth = Auth.Token(GITHUB_TOKEN)
             self.g = Github(auth=auth)
             self.repo = self.g.get_repo(REPO_NAME)
@@ -44,22 +42,40 @@ class DataManager:
             st.error(f"GitHub 连接失败: {e}")
 
     def load(self):
+        """
+        读取数据。
+        即使 JSON 解析失败，也要返回文件的 SHA，这样保存时才能覆盖旧文件，
+        而不是错误地尝试新建文件导致 422 错误。
+        """
         try:
+            # 1. 尝试获取文件对象
             contents = self.repo.get_contents(self.filename)
-            data = json.loads(contents.decoded_content.decode())
-            # 确保返回的是列表
-            if not isinstance(data, list):
-                return [], contents.sha
-            return data, contents.sha
-        except:
+            sha = contents.sha # 关键：只要文件存在，先拿到 SHA
+            
+            # 2. 尝试解析内容
+            try:
+                data = json.loads(contents.decoded_content.decode())
+                # 确保是列表
+                if not isinstance(data, list):
+                    return [], sha
+                return data, sha
+            except json.JSONDecodeError:
+                # 如果文件内容坏了(不是JSON)，返回空数据，但在保存时使用该 SHA 进行覆盖
+                return [], sha
+                
+        except Exception as e:
+            # 只有当文件真的不存在 (404) 时，SHA 才是 None
             return [], None
 
     def save(self, new_data_list, sha, commit_msg="Update data"):
+        """保存数据"""
         try:
             content_str = json.dumps(new_data_list, indent=4, ensure_ascii=False)
             if sha:
+                # 如果有 SHA，说明文件存在，执行更新 (覆盖)
                 self.repo.update_file(path=self.filename, message=commit_msg, content=content_str, sha=sha)
             else:
+                # 如果没有 SHA，说明文件不存在，执行新建
                 self.repo.create_file(path=self.filename, message="Init file", content=content_str)
             return True
         except Exception as e:
