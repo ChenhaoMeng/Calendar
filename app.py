@@ -7,7 +7,7 @@ from datetime import datetime
 import re
 from streamlit_calendar import calendar
 
-# --- 1. 基础配置 (必须在第一行) ---
+# --- 1. 基础配置 ---
 st.set_page_config(
     page_title="DeepSeek Life OS",
     page_icon="🌊",
@@ -15,98 +15,79 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS 深度美化 (毛玻璃 + 水蓝系) ---
+# --- 2. 强力 CSS 注入 (修复样式失效问题) ---
+# 注意：这里使用了 data-testid 来更精准地定位元素，并配合 !important 强制覆盖主题
 st.markdown("""
 <style>
-    /* 全局背景：水蓝渐变 */
+    /* 1. 强制覆盖全局背景 (无论深色/浅色模式) */
     .stApp {
-        background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 50%, #80deea 100%);
-        background-attachment: fixed;
+        background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 50%, #80deea 100%) !important;
+        background-attachment: fixed !important;
     }
 
-    /* 侧边栏毛玻璃 */
+    /* 2. 侧边栏样式 */
     section[data-testid="stSidebar"] {
-        background-color: rgba(255, 255, 255, 0.4);
+        background-color: rgba(255, 255, 255, 0.4) !important;
         backdrop-filter: blur(12px);
         border-right: 1px solid rgba(255, 255, 255, 0.5);
     }
-
-    /* 顶部标题栏隐藏/透明化 */
-    header {
-        background: transparent !important;
+    
+    /* 3. 字体颜色强制修正 (防止在深色模式下变成白色看不清) */
+    h1, h2, h3, p, div, span, label {
+        color: #006064 !important; /* 深青色 */
+        text-shadow: none !important;
     }
-
-    /* 通用卡片：毛玻璃效果 */
-    .glass-card {
-        background: rgba(255, 255, 255, 0.55);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
+    
+    /* 4. 毛玻璃卡片容器 */
+    .glass-container {
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
         border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.6);
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
-        padding: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        padding: 25px;
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
         margin-bottom: 20px;
-        color: #006064; /* 深青色文字 */
     }
 
-    /* 输入框美化 */
-    .stTextArea textarea, .stTextInput input {
-        background-color: rgba(255, 255, 255, 0.6) !important;
-        border: 1px solid rgba(255, 255, 255, 0.8) !important;
-        border-radius: 12px !important;
-        color: #006064 !important;
-    }
-    
-    /* 按钮美化 - 水蓝风格 */
+    /* 5. 按钮美化 */
     div.stButton > button {
-        background: linear-gradient(45deg, #4dd0e1, #00bcd4);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0, 188, 212, 0.3);
-        transition: all 0.3s ease;
-        font-weight: bold;
-    }
-    div.stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 188, 212, 0.4);
-        background: linear-gradient(45deg, #26c6da, #00acc1);
-    }
-    
-    /* 删除按钮特别样式 (红色系微调) */
-    .delete-btn button {
-        background: rgba(255, 82, 82, 0.1) !important;
-        color: #ff5252 !important;
-        border: 1px solid rgba(255, 82, 82, 0.3) !important;
-        box-shadow: none !important;
-    }
-    .delete-btn button:hover {
-        background: #ff5252 !important;
+        background: linear-gradient(45deg, #26c6da, #00acc1) !important;
         color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: bold !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        transition: transform 0.1s;
     }
-
-    /* 字体颜色覆盖 */
-    h1, h2, h3, h4, p, label {
-        color: #006064 !important;
-        font-family: 'Helvetica Neue', sans-serif;
+    div.stButton > button:active {
+        transform: scale(0.98);
     }
     
-    /* Expander 样式 */
-    .streamlit-expanderHeader {
+    /* 6. 输入框背景修正 */
+    .stTextArea textarea, .stTextInput input, .stSelectbox div[data-baseweb="select"] {
+        background-color: rgba(255, 255, 255, 0.7) !important;
+        color: #004d40 !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255, 255, 255, 1) !important;
+    }
+    
+    /* 7. 表格样式 (用于删除面板) */
+    div[data-testid="stDataEditor"] {
         background-color: rgba(255, 255, 255, 0.5);
         border-radius: 10px;
-        color: #006064;
+        padding: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 初始化与连接 ---
+# --- 3. 初始化连接 ---
 try:
     GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
     REPO_NAME = st.secrets["REPO_NAME"]
     DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
 except:
-    st.error("❌ 配置丢失，请检查 Secrets")
+    st.error("❌ Secrets 配置丢失")
     st.stop()
 
 @st.cache_resource
@@ -121,7 +102,6 @@ def get_repo():
 
 client = get_client()
 
-# --- 4. 数据管理类 ---
 class DataManager:
     def __init__(self, filename):
         self.filename = filename
@@ -131,12 +111,9 @@ class DataManager:
         try:
             contents = self.repo.get_contents(self.filename)
             sha = contents.sha
-            try:
-                data = json.loads(contents.decoded_content.decode())
-                if not isinstance(data, list): data = []
-                return data, sha
-            except:
-                return [], sha
+            data = json.loads(contents.decoded_content.decode())
+            if not isinstance(data, list): data = []
+            return data, sha
         except:
             return [], None
 
@@ -149,12 +126,12 @@ class DataManager:
                 self.repo.create_file(self.filename, "Init", content)
             return True
         except Exception as e:
-            st.toast(f"保存失败: {e}", icon="🚫")
+            st.error(f"Save failed: {e}")
             return False
 
 calendar_db = DataManager("events.json")
 
-# --- 5. AI 解析逻辑 (24小时制强化) ---
+# --- 4. AI 逻辑 ---
 def clean_json(s):
     s = re.sub(r"```json\s*", "", s)
     s = re.sub(r"```", "", s)
@@ -164,13 +141,12 @@ def ai_parse_calendar(text):
     prompt = f"""
     当前年份: {datetime.now().year}。
     分析文本: "{text}"
-    请提取日程并返回JSON**数组** (List)。
-    要求:
-    1. start/end 必须是 ISO 格式: "YYYY-MM-DDTHH:MM:SS" (严格24小时制, 如 13:30)。
-    2. 如果文本中有类似 (13:10-15:10) 的时间段，必须拆分为 start 和 end。
-    3. title: 事件名称。
+    提取日程并返回JSON数组。
+    规则:
+    1. start/end 必须是 ISO 格式 "YYYY-MM-DDTHH:MM:SS" (24小时制)。
+    2. 如果有时间段 (如 13:00-15:00)，分别写入 start 和 end。
+    3. title: 事件名。
     4. location: 地点。
-    5. allDay: 如果有具体时间则为 false，否则 true。
     """
     try:
         response = client.chat.completions.create(
@@ -183,113 +159,119 @@ def ai_parse_calendar(text):
     except:
         return []
 
-# --- 6. 主逻辑 ---
-st.title("🌊 DeepSeek Flow")
+# --- 5. 页面逻辑 ---
+st.title("🌊 DeepSeek Life OS")
 
-# 容器：毛玻璃卡片包裹日历区域
-with st.container():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+# 加载数据
+events_data, sha = calendar_db.load()
+
+# === 主布局 ===
+col_left, col_right = st.columns([2, 1])
+
+# 左侧：日历视图
+with col_left:
+    st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+    st.subheader("📅 日程视图")
     
-    col_main, col_list = st.columns([7, 3])
-
-    # === 左侧：日历视图 ===
-    with col_main:
-        st.subheader("📅 日程概览")
-        events_data, sha = calendar_db.load()
+    cal_events = []
+    for e in events_data:
+        cal_events.append({
+            "title": e.get('title'),
+            "start": e.get('start'),
+            "end": e.get('end'),
+            "color": "#00acc1",
+            "textColor": "#ffffff"
+        })
         
-        # 转换数据给日历组件
-        cal_events = []
-        for e in events_data:
-            cal_events.append({
-                "title": f"{e.get('title')}",
-                "start": e.get('start'),
-                "end": e.get('end'),
-                "color": "#00bcd4", # 水蓝色块
-                "textColor": "#ffffff"
-            })
-            
-        calendar_options = {
-            "headerToolbar": {
-                "left": "today prev,next",
-                "center": "title",
-                "right": "dayGridMonth,timeGridWeek,listWeek"
-            },
-            "initialView": "dayGridMonth",
-            "height": 600,
-            "slotMinTime": "06:00:00",
-            "slotMaxTime": "23:00:00"
-        }
-        calendar(events=cal_events, options=calendar_options, key="flow_cal")
+    calendar_options = {
+        "headerToolbar": {"left": "title", "center": "", "right": "dayGridMonth,timeGridWeek,listWeek"},
+        "initialView": "dayGridMonth",
+        "height": 650,
+        "slotMinTime": "06:00:00",
+        "slotMaxTime": "24:00:00"
+    }
+    calendar(events=cal_events, options=calendar_options, key="main_cal")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # === 右侧：控制台 (添加 & 列表 & 删除) ===
-    with col_list:
-        # 1. 添加功能 (折叠面板)
-        with st.expander("✨ 添加日程 (点击展开)", expanded=False):
-            with st.form("add_form", clear_on_submit=True):
-                txt = st.text_area("粘贴课表或输入安排...", height=100, 
-                                 placeholder="2025-01-16 13:10 语音学 东下院102...")
-                if st.form_submit_button("🚀 智能解析", type="primary", use_container_width=True):
-                    if txt:
-                        with st.spinner("正在分析时间..."):
-                            new_items = ai_parse_calendar(txt)
-                            if new_items:
-                                # --- 核心逻辑：去重 ---
-                                existing_keys = {f"{e.get('start')}_{e.get('title')}" for e in events_data}
-                                unique_adds = []
-                                for item in new_items:
-                                    key = f"{item.get('start')}_{item.get('title')}"
-                                    if key not in existing_keys:
-                                        unique_adds.append(item)
-                                        existing_keys.add(key) # 防止本次批量中也有重复
-                                
-                                if unique_adds:
-                                    events_data.extend(unique_adds)
-                                    if calendar_db.save(events_data, sha):
-                                        st.toast(f"已添加 {len(unique_adds)} 条日程 (已去重)", icon="✅")
-                                        st.rerun()
-                                else:
-                                    st.warning("所有日程均已存在，跳过重复项。")
-                            else:
-                                st.error("无法解析内容")
-
-        st.markdown("---")
-        
-        # 2. 列表与删除功能
-        st.subheader("📋 待办清单")
-        
-        if not events_data:
-            st.info("暂无安排，享受自由时光~ 🍵")
-        else:
-            # 按时间排序
-            events_data.sort(key=lambda x: x.get('start', ''))
-            
-            # 限制显示高度，避免太长
-            with st.container(height=500):
-                for i, event in enumerate(events_data):
-                    # 解析时间用于显示
-                    start_raw = event.get('start', '')
-                    try:
-                        dt = datetime.fromisoformat(start_raw)
-                        time_display = dt.strftime("%m-%d %H:%M") # 24小时制显示
-                    except:
-                        time_display = start_raw
-
-                    # 单行布局：内容 + 删除按钮
-                    c1, c2 = st.columns([5, 1])
-                    with c1:
-                        st.markdown(f"""
-                        <div style="background:rgba(255,255,255,0.4);padding:8px;border-radius:8px;margin-bottom:5px;">
-                            <div style="font-weight:bold;font-size:0.9em;">{event.get('title')}</div>
-                            <div style="font-size:0.8em;color:#666;">🕐 {time_display} 📍 {event.get('location','')}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with c2:
-                        # 删除按钮
-                        st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
-                        if st.button("✕", key=f"del_{i}", help="删除此日程"):
-                            events_data.pop(i)
-                            calendar_db.save(events_data, sha, "Delete event")
+# 右侧：操作面板 + 批量管理
+with col_right:
+    # --- 1. 添加面板 ---
+    st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+    st.subheader("✨ 智能添加")
+    with st.form("add_form", clear_on_submit=True):
+        txt = st.text_area("输入...", height=80, placeholder="粘贴文本或输入：明天下午三点开会")
+        if st.form_submit_button("解析并去重导入", use_container_width=True):
+            if txt:
+                with st.spinner("Processing..."):
+                    new_items = ai_parse_calendar(txt)
+                    if new_items:
+                        # 去重逻辑
+                        existing_keys = {f"{e.get('start')}_{e.get('title')}" for e in events_data}
+                        added_count = 0
+                        for item in new_items:
+                            key = f"{item.get('start')}_{item.get('title')}"
+                            if key not in existing_keys:
+                                events_data.append(item)
+                                existing_keys.add(key)
+                                added_count += 1
+                        
+                        if added_count > 0:
+                            calendar_db.save(events_data, sha, "Add events")
+                            st.toast(f"成功添加 {added_count} 条日程", icon="🎉")
                             st.rerun()
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            st.warning("所有日程已存在，无需添加")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True) # End glass-card
+    # --- 2. 批量管理面板 (删除功能升级) ---
+    st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+    st.subheader("🗑️ 批量管理")
+    
+    if events_data:
+        # 将 JSON 转换为 DataFrame 方便展示
+        df = pd.DataFrame(events_data)
+        
+        # 只需要展示这几列
+        cols_to_show = ['start', 'title', 'location']
+        # 确保列存在，防止报错
+        for c in cols_to_show:
+            if c not in df.columns: df[c] = ""
+            
+        # 格式化时间列显示，去掉T，只保留好看的格式
+        df['display_time'] = df['start'].apply(lambda x: x.replace('T', ' ')[:-3] if x else '')
+        
+        # 使用 data_editor 增加一个 "删除?" 勾选列
+        df['删除'] = False 
+        
+        edited_df = st.data_editor(
+            df[['删除', 'display_time', 'title', 'location']],
+            column_config={
+                "删除": st.column_config.CheckboxColumn("选中删除", default=False),
+                "display_time": "时间",
+                "title": "事项",
+                "location": "地点"
+            },
+            hide_index=True,
+            use_container_width=True,
+            height=300
+        )
+        
+        # 执行删除逻辑
+        # 只有当用户勾选并点击下面的按钮时才触发
+        delete_indices = edited_df[edited_df['删除']].index.tolist()
+        
+        if delete_indices:
+            st.warning(f"已选中 {len(delete_indices)} 条日程")
+            if st.button("🔴 确认删除选中的日程", use_container_width=True):
+                # 倒序删除，防止索引错位
+                for i in sorted(delete_indices, reverse=True):
+                    if i < len(events_data):
+                        events_data.pop(i)
+                
+                calendar_db.save(events_data, sha, "Batch delete")
+                st.success("删除成功！")
+                st.rerun()
+    else:
+        st.info("暂无数据")
+        
+    st.markdown('</div>', unsafe_allow_html=True)
